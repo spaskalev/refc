@@ -1,5 +1,6 @@
 
 #define REFC_H_IMPLEMENTATION
+#define REFC_H_DEBUG
 #include "refc.h"
 
 #include <assert.h>
@@ -20,4 +21,16 @@ int main() {
 	refc_release(ref);
 
 	assert(dtor_called == 1);
+
+
+	struct refc_ref *parent = refc_allocate(512);
+	struct refc_ref *child = refc_allocate(512);
+	assert(refc_link(parent, child));
+	assert(refc_link(child, parent) == 0);
+
+	assert(refc_unlink(parent, child));
+	assert(refc_unlink(parent, child) == 0);
+
+	refc_release(child);
+	refc_release(parent);
 }

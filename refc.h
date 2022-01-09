@@ -61,6 +61,38 @@ void refc_release(struct refc_ref *ref);
 /* Returns the target block of this reference */
 void *refc_access(struct refc_ref *ref);
 
+/*
+ * Links two references into a parent-child relation.
+ * Used to track reference cycles when REFC_H_DEBUG is defined.
+ * Does nothing when REFC_H_DEBUG is not defined.
+ *
+ * Returns 1 if the link is successful.
+ * Returns 0 if a cycle is found or the link cannot be established.
+ * This makes it suitable to be used in an assert macro.
+ *
+ * When REFC_H_DEBUG is not defined refc_link is a macro for (1).
+ */
+#ifdef REFC_H_DEBUG
+int refc_link(struct refc_ref *parent, struct refc_ref *child);
+#else
+#define refc_link(P, C) (1)
+#endif
+
+/*
+ * Unlinks two references from a parent-child relation.
+ * Used to track reference cycles when REFC_H_DEBUG is defined.
+ *
+ * Returns 1 when the unlinking is successful.
+ * Returns 0 when there is no such link.
+ *
+ * When REFC_H_DEBUG is not defined refc_unlink is an empty macro.
+ */
+#ifdef REFC_H_DEBUG
+int refc_unlink(struct refc_ref *parent, struct refc_ref *child);
+#else
+#define refc_unlink(P, C)
+#endif
+
 #endif /* REFC_H */
 
 #ifdef REFC_H_IMPLEMENTATION
@@ -70,6 +102,13 @@ void *refc_access(struct refc_ref *ref);
 #include <stddef.h>
 #include <stdlib.h>
 
+#ifdef REFC_H_DEBUG
+struct ListNode {
+	struct ListNode *next;
+	struct refc_ref * _Atomic value;
+};
+#endif
+
 struct refc_ref {
 	/* The reference count for this reference */
 	atomic_size_t reference_count;
@@ -77,6 +116,12 @@ struct refc_ref {
 	/* Associated destructor function. Can be NULL */
 	void (*destructor)(void *);
 
+#ifdef REFC_H_DEBUG
+	/* Contains child links */
+	struct ListNode * _Atomic links;
+#endif
+
+	/* The memory block returned by refc_access */
 	_Alignas(max_align_t) unsigned char block[];
 };
 
@@ -91,26 +136,74 @@ struct refc_ref *refc_allocate_dtor(size_t size, void (*destructor)(void *)) {
 	}
 	ref->reference_count = 1;
 	ref->destructor = destructor;
+
+#ifdef REFC_H_DEBUG
+    ref->links = NULL;
+#endif
+
 	return ref;
 }
 
 void refc_retain(struct refc_ref *ref) {
-	atomic_fetch_add(&ref->reference_count, 1);
+	atomic_fetch_add(&(ref->reference_count), 1);
 }
 
 void refc_release(struct refc_ref *ref) {
-	atomic_fetch_sub(&ref->reference_count, 1);
-	if (atomic_load(&ref->reference_count) > 0) {
+	atomic_fetch_sub(&(ref->reference_count), 1);
+	if (atomic_load(&(ref->reference_count)) > 0) {
 		return;
 	}
 	if (ref->destructor != NULL) {
 		(ref->destructor)(&ref->block);
 	}
+#ifdef REFC_H_DEBUG
+    struct ListNode *head = atomic_load(&(ref->links));
+    struct ListNode *next;
+    while (head) {
+        next = head->next;
+        free(head);
+        head = next;
+    }
+#endif
 	free(ref);
 }
 
 void *refc_access(struct refc_ref *ref) {
 	return &ref->block;
 }
+
+#ifdef REFC_H_DEBUG
+int refc_link(struct refc_ref *parent, struct refc_ref *child) {
+	struct ListNode *head = atomic_load(&(child->links));
+	while(head) {
+		if (parent == atomic_load(&(head->value))) {
+			return 0;
+		}
+		head = head->next;
+	}
+    struct ListNode *new_head = malloc(sizeof(struct ListNode));
+    if (new_head == NULL) {
+        return 0;
+    }
+    atomic_store(&(new_head->value), child);
+    do {
+        head = (struct ListNode *) atomic_load(&parent->links);
+        new_head->next = head;
+    } while (!atomic_compare_exchange_weak(&(parent->links), &head, new_head));
+	return 1;
+}
+
+int refc_unlink(struct refc_ref *parent, struct refc_ref *child) {
+	struct ListNode *head = atomic_load(&(parent->links));
+    while(head) {
+        if (child == atomic_load(&(head->value))) {
+            atomic_store(&(head->value), NULL);
+            return 1;
+        }
+        head = head->next;
+    }
+    return 0;
+}
+#endif
 
 #endif /* REFC_H_IMPLEMENTATION */
