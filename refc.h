@@ -13,6 +13,20 @@
  * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
  * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
  * OF THIS SOFTWARE.
+ *
+ * This library provided reference counting allocation functions
+ * with the option to call a destructor function when a object is
+ * about to be freed. The semantics for this library are similar
+ * to Objective-C's NSObject.
+ *
+ * 1. You own any allocation that you create using `refc_allocate`.
+ * 2. If you get a `struct refc_ref *` as a parameter you do not own it.
+ * 3. If you wish to save it you must own it. To own it call `refc_retain`.
+ * 4. If you own it you must call `refc_release` when done with it.
+ *
+ * This library uses a opaque pointer with a helper accessor function
+ * to avoid mixing pointers that are obtained from the library with
+ * pointers that are obtained otherwise.
  */
 
 #ifndef REFC_H
@@ -44,14 +58,8 @@ void refc_retain(struct refc_ref *ref);
  */
 void refc_release(struct refc_ref *ref);
 
-/* Lock the reference and return a void pointer to the block. */
-void *refc_lock(struct refc_ref *ref);
-
-/*
- * Unlock the reference. Any previously-returned pointer to the block
- * is invalid and should no longer be used.
- */
-void refc_unlock(struct refc_ref *ref);
+/* Returns the target block of this reference */
+void *refc_access(struct refc_ref *ref);
 
 #endif /* REFC_H */
 
@@ -63,13 +71,10 @@ void refc_unlock(struct refc_ref *ref);
 #include <stdlib.h>
 
 struct refc_ref {
-	/* The reference count for this referece */
+	/* The reference count for this reference */
 	atomic_size_t reference_count;
 
-	/* The lock count for this referece */
-	atomic_size_t lock_count;
-
-	/* Associated desctructor function. Can be NULL */
+	/* Associated destructor function. Can be NULL */
 	void (*destructor)(void *);
 
 	_Alignas(max_align_t) unsigned char block[];
@@ -85,34 +90,27 @@ struct refc_ref *refc_allocate_dtor(size_t size, void (*destructor)(void *)) {
 		return NULL;
 	}
 	ref->reference_count = 1;
-	ref->lock_count = 0;
 	ref->destructor = destructor;
 	return ref;
 }
 
 void refc_retain(struct refc_ref *ref) {
-	ref->reference_count++;
+	atomic_fetch_add(&ref->reference_count, 1);
 }
 
 void refc_release(struct refc_ref *ref) {
-	ref->reference_count--;
-	if (ref->reference_count > 0) {
+	atomic_fetch_sub(&ref->reference_count, 1);
+	if (atomic_load(&ref->reference_count) > 0) {
 		return;
 	}
-
 	if (ref->destructor != NULL) {
 		(ref->destructor)(&ref->block);
 	}
 	free(ref);
 }
 
-void *refc_lock(struct refc_ref *ref) {
-	ref->lock_count++;
+void *refc_access(struct refc_ref *ref) {
 	return &ref->block;
-}
-
-void refc_unlock(struct refc_ref *ref) {
-	ref->lock_count--;
 }
 
 #endif /* REFC_H_IMPLEMENTATION */

@@ -14,10 +14,9 @@ int main() {
 	struct refc_ref *ref = refc_allocate_dtor(512, &dtor);
 	assert(ref != NULL);
 
-	void *block = refc_lock(ref);
+	void *block = refc_access(ref);
 	assert(block != NULL);
 
-	refc_unlock(ref);
 	refc_release(ref);
 
 	assert(dtor_called == 1);
