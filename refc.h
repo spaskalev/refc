@@ -27,6 +27,8 @@
  * This library uses a opaque pointer with a helper accessor function
  * to avoid mixing pointers that are obtained from the library with
  * pointers that are obtained otherwise.
+ *
+ * Check the `refc_link` and `refc_unlink` functions for cycle detection.
  */
 
 #ifndef REFC_H
