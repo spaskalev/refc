@@ -33,4 +33,19 @@ int main() {
 
 	refc_release(child);
 	refc_release(parent);
+
+	struct refc_ref *nodes[5];
+	for (size_t i = 0; i < 5; i++) {
+		nodes[i] = refc_allocate(512);
+	}
+	assert(refc_link(nodes[0], nodes[1]));
+	assert(refc_link(nodes[0], nodes[2]));
+	assert(refc_link(nodes[1], nodes[2]));
+	assert(refc_link(nodes[2], nodes[3]));
+	assert(refc_link(nodes[2], nodes[4]));
+	assert(refc_link(nodes[4], nodes[1]) == 0);
+
+	for (size_t i = 0; i < 5; i++) {
+		refc_release(nodes[i]);
+	}
 }

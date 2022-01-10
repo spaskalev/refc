@@ -173,14 +173,32 @@ void *refc_access(struct refc_ref *ref) {
 }
 
 #ifdef REFC_H_DEBUG
+int find_in_lists(struct ListNode *head, struct refc_ref *match) {
+    while(head) {
+        struct refc_ref *value = atomic_load(&(head->value));
+        if (value == match) {
+            return 1;
+        }
+        if (find_in_lists(atomic_load(&(value->links)), match)) {
+            return 1;
+        }
+        head = head->next;
+    }
+    return 0;
+}
+
 int refc_link(struct refc_ref *parent, struct refc_ref *child) {
+    /*
+     * Check the list of links for a cycle
+     */
 	struct ListNode *head = atomic_load(&(child->links));
-	while(head) {
-		if (parent == atomic_load(&(head->value))) {
-			return 0;
-		}
-		head = head->next;
-	}
+	if (find_in_lists(head, parent)) {
+        return 0;
+    }
+
+    /*
+     * No cycles found, append the child to the parent's list of links
+     */
     struct ListNode *new_head = malloc(sizeof(struct ListNode));
     if (new_head == NULL) {
         return 0;
@@ -194,6 +212,12 @@ int refc_link(struct refc_ref *parent, struct refc_ref *child) {
 }
 
 int refc_unlink(struct refc_ref *parent, struct refc_ref *child) {
+    /*
+     * Remove the child from the parent's list of links.
+     * As deleting from a lock-free linked list is a tricky matter
+     * this implementation simply sets the particular node to NULL,
+     * which will not match any existing child reference.
+     */
 	struct ListNode *head = atomic_load(&(parent->links));
     while(head) {
         if (child == atomic_load(&(head->value))) {
