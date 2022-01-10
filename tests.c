@@ -48,4 +48,8 @@ int main() {
 	for (size_t i = 0; i < 5; i++) {
 		refc_release(nodes[i]);
 	}
+
+	struct refc_ref *node = refc_allocate(512);
+	assert(refc_link(node, node) == 0);
+	refc_release(node);
 }

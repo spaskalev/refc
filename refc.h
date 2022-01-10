@@ -197,6 +197,13 @@ int refc_link(struct refc_ref *parent, struct refc_ref *child) {
     }
 
     /*
+     * Check for linking attempt between the same block
+     */
+    if (parent == child) {
+        return 0;
+    }
+
+    /*
      * No cycles found, append the child to the parent's list of links
      */
     struct ListNode *new_head = malloc(sizeof(struct ListNode));
