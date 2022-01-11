@@ -147,12 +147,12 @@ struct refc_ref *refc_allocate_dtor(size_t size, void (*destructor)(void *)) {
 }
 
 void refc_retain(struct refc_ref *ref) {
-	atomic_fetch_add(&(ref->reference_count), 1);
+	atomic_fetch_add_explicit(&(ref->reference_count), 1, memory_order_relaxed);
 }
 
 void refc_release(struct refc_ref *ref) {
-	atomic_fetch_sub(&(ref->reference_count), 1);
-	if (atomic_load(&(ref->reference_count)) > 0) {
+	atomic_fetch_sub_explicit(&(ref->reference_count), 1, memory_order_relaxed);
+	if (atomic_load_explicit(&(ref->reference_count), memory_order_relaxed) > 0) {
 		return;
 	}
 	if (ref->destructor != NULL) {
